@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: This template creates a load balancer with a listener rule. If you have more paths to direct to, simply add more listener rules.
+A security group is created for the load balancer.
+
+Parameters:
+  VpcStack:
+    Description: VPC stack name
+    Type: String
+
+  AsgStack:
+    Description: Autoscaling group stack name
+    Type: String
+
+Resources:
+  LoadBalancerSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Load Balancer Security Group
+      VpcId:
+        'Fn::ImportValue': !Sub '${VpcStack}-VpcId'
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: '80'
+          ToPort: '80'
+          IpProtocol: tcp
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: '80'
+          ToPort: '80'
+          IpProtocol: tcp
+
+  LoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+      Subnets:
+        - 'Fn::ImportValue': !Sub '${VpcStack}-PublicSubnet1'
+        - 'Fn::ImportValue': !Sub '${VpcStack}-PublicSubnet2'
+
+  LoadBalancerListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      DefaultActions:
+        - TargetGroupArn:
+            'Fn::ImportValue': !Sub '${AsgStack}-TgArn'
+          Type: forward
+      Port: 80
+      Protocol: HTTP
+
+  ListenerRule:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn:
+            'Fn::ImportValue': !Sub '${AsgStack}-TgArn'
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /path
+      ListenerArn: !Ref LoadBalancerListener
+      Priority: 1
+
+Outputs:
+  LoadBalancerDNS:
+    Description: LoadBalancer DNS
+    Value: !GetAtt LoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-LbDNS'

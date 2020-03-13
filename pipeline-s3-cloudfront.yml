@@ -1,0 +1,297 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template creates a pipeline which fetches the source code from github, creates a S3 bucket to store
+  the artifact, and another S3 bucket to host the website. It also creates a cloudfront is created with two origins,
+  the S3 hosting the website and the load balancer directing the traffic to EC2 instances (autoscaling group).
+  In addition, a record set with corresponding to the cloudfront alias. This template references the Stelligent template
+  https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  LbStack:
+    Description: LoadBalancer stack name
+    Type: String
+
+  SiteBucketName:
+    Description: The S3 bucket which hosts the website
+    Type: String
+
+  GitHubUser:
+    Type: String
+
+  GitHubRepo:
+    Type: String
+
+  GitHubBranch:
+    Type: String
+
+  GitHubToken:
+    NoEcho: true
+    Type: String
+
+  BuildType:
+    Description: The build container type to use for building the app
+    Type: String
+    Default: LINUX_CONTAINER
+
+  BuildComputeType:
+    Description: The build compute type to use for building the app
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+
+  BuildImage:
+    Description: The build image to use for building the app
+    Type: String
+    Default: 'aws/codebuild/ubuntu-base:14.04'
+
+  S3WebEndPoint:
+    Description: >-
+      Default is N.Virginia. Please refer to
+      https://docs.aws.amazon.com/general/latest/gr/s3.html#s3_website_region_endpoints
+    Type: String
+    Default: s3-website-us-east-1.amazonaws.com
+
+  CertificateARN:
+    Description: SSL certificate ARN
+    Type: String
+
+Resources:
+
+  SiteBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      SiteBucketName: !Ref SiteBucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  S3BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref SiteBucketName
+      PolicyDocument:
+        Statement:
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Principal: '*'
+            Sid: PublicReadGetObjects
+            Resource:
+              - !Sub 'arn:aws:s3:::${SiteBucketName}/*'
+
+  CodeBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: codebuild-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: '*'
+            Version: 2012-10-17
+
+  CodePipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: codepipeline-service
+          PolicyDocument:
+            Statement:
+              - Action:
+                  - 'codebuild:*'
+                Resource: '*'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                  - 's3:GetObjectVersion'
+                  - 's3:GetBucketVersioning'
+                Resource: '*'
+                Effect: Allow
+              - Action:
+                  - 's3:PutObject'
+                Resource:
+                  - 'arn:aws:s3:::codepipeline*'
+                Effect: Allow
+              - Action:
+                  - 's3:*'
+                  - 'cloudformation:*'
+                  - 'iam:PassRole'
+                Resource: '*'
+                Effect: Allow
+            Version: 2012-10-17
+
+  PipelineBucket:
+    Type: 'AWS::S3::Bucket'
+
+  CodeBuildDeploySite:
+    Type: 'AWS::CodeBuild::Project'
+    DependsOn: CodeBuildRole
+    Properties:
+      Description: Deploy site to S3
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: !Ref BuildType
+        ComputeType: !Ref BuildComputeType
+        Image: !Sub '${BuildImage}'
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            post_build:
+              commands:
+                - aws s3 sync --delete ./build s3://${SiteBucketName}
+                - aws cloudfront create-invalidation --distribution-id ${CfDistribution} --paths '/*'
+      TimeoutInMinutes: 10
+
+  Pipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - InputArtifacts: []
+              Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: '1'
+                Provider: GitHub
+              OutputArtifacts:
+                - Name: SourceArtifacts
+              Configuration:
+                Owner: !Ref GitHubUser
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubToken
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: Artifact
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: '1'
+                Provider: CodeBuild
+              InputArtifacts:
+                - Name: SourceArtifacts
+              OutputArtifacts:
+                - Name: DeploymentArtifacts
+              Configuration:
+                ProjectName: !Ref CodeBuildDeploySite
+              RunOrder: 1
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineBucket
+
+  CfDistribution:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Alias:
+          - www.example.com
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateARN
+          SslSupportMethod: sni-only
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - HEAD
+            - GET
+          CachedMethods:
+            - HEAD
+            - GET
+          Compress: false
+          DefaultTTL: 86400
+          ForwardedValues:
+            Cookies:
+              Forward: none
+            Headers:
+              - Origin
+            QueryString: false
+          MaxTTL: 31536000
+          MinTTL: 86400
+          TargetOriginId: S3
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http1.1
+        IPV6Enabled: false
+        PriceClass: PriceClass_All
+        Origins:
+          - DomainName: !Sub '${SiteBucketName}.${S3WebEndPoint}'
+            Id: S3
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: http-only
+          - DomainName:
+              'Fn::ImportValue': !Sub '${LbStack}-LbDNS'
+            Id: LoadBalancer
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: match-viewer
+        CacheBehaviors:
+          - AllowedMethods:
+              - GET
+              - HEAD
+              - DELETE
+              - OPTIONS
+              - PATCH
+              - POST
+              - PUT
+            CachedMethods:
+              - HEAD
+              - GET
+            TargetOriginId: LoadBalancer
+            PathPattern: /api/*
+            ForwardedValues:
+              QueryString: 'true'
+              Cookies:
+                Forward: none
+              Headers:
+                - '*'
+            Compress: false
+            DefaultTTL: 86400
+            MaxTTL: 31536000
+            MinTTL: 0
+            ViewerProtocolPolicy: allow-all
+
+  RecordSet:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Properties:
+      HostedZoneId: Z2QF3DGE12G2FV
+      RecordSets:
+        - Name: www.example.com
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt CfDistribution.DomainName
+    DependsOn: CfDistribution

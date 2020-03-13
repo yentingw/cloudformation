@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template creates an autoscaling group,
+and a target group for the load balancer listener to be launched.
+Also creates necessary roles for the autoscaling group.
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+
+  VpcStack:
+    Description: VPC stack name
+    Type: String
+
+  AMIid:
+    Type: String
+    Default: ami-0eb941b8e00feef88
+
+  InstanceType:
+    Type: String
+    Default: t2.micro
+
+  MinSize:
+    Type: Number
+    Default: 1
+
+  MaxSize:
+    Type: Number
+    Default: 2
+
+  EC2KeyPair:
+    Type: String
+
+Resources:
+  EC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: CodeDeployForAutoScaling
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 's3:*'
+                  - 'ec2:RunInstances'
+                  - 'ec2:CreateTags'
+                  - 'iam:PassRole'
+                Resource: '*'
+
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref EC2Role
+
+  AutoScalingGroupLaunchConfig:
+    Type: 'AWS::AutoScaling::LaunchConfiguration'
+    Properties:
+      KeyName: !Ref EC2KeyPair
+      IamInstanceProfile: !Ref InstanceProfile
+      AssociatePublicIpAddress: false
+      ImageId: !Ref AMIid
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !ImportValue
+          'Fn::Sub': '${VpcStack}-VpcSecurityGroup'
+      UserData: !Base64
+        'Fn::Join':
+          - ''
+          - - |
+              <powershell>
+            - |
+              New-Item -Path c:\temp -ItemType "directory" -Force
+            - >
+              powershell.exe -Command Read-S3Object -BucketName
+              aws-codedeploy-ap-southeast-2/latest -Key codedeploy-agent.msi
+              -File c:\temp\codedeploy-agent.msi
+            - ''
+            - >-
+              Start-Process -Wait -FilePath c:\temp\codedeploy-agent.msi
+              -WindowStyle Hidden
+            - </powershell>
+
+  AutoScalingGroup:
+    Type: 'AWS::AutoScaling::AutoScalingGroup'
+    Properties:
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      LaunchConfigurationName: !Ref AutoScalingGroupLaunchConfig
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': '${VpcStack}-PrivateSubnet1'
+        - !ImportValue
+          'Fn::Sub': '${VpcStack}-PrivateSubnet2'
+      TargetGroupARNs:
+        - !Ref TargetGroup
+
+  TargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      UnhealthyThresholdCount: 2
+      HealthyThresholdCount: 2
+      HealthCheckPath: /
+      Port: 80
+      Protocol: HTTP
+      VpcId: !ImportValue
+        'Fn::Sub': '${VpcStack}-VpcId'
+
+Outputs:
+  AutoScalingGroup:
+    Description: AutoScaling Group ID
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-Asg'
+
+  TargetGroupName:
+    Description: Target Group Name
+    Value: !GetAtt TargetGroup.TargetGroupName
+    Export:
+      Name: !Sub '${AWS::StackName}-TgName'
+
+  TargetGroupArn:
+    Description: Target Group ARN
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-TgArn'
