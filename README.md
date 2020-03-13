@@ -44,4 +44,9 @@
 
 ## References
 
-https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml
+- Stelligent https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml
+- How to continuously deploy a static website in style using GitHub and AWS 
+  https://medium.com/@kyle.galbraith/how-to-continuously-deploy-a-static-website-in-style-using-github-and-aws-3df7ecb58d9c
+- How to Easily Boost the Delivery of Static Websites in AWS
+  https://blog.kylegalbraith.com/2018/09/16/how-to-easily-boost-the-delivery-of-static-websites-in-aws/
+- AWS official docs
