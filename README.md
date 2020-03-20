@@ -2,31 +2,45 @@
 
 ## The Launch Order & Main Resources Created
 
-### 1. vpc.yml
+<!-- TOC -->
+
+- [A CloudFormation Solution](#a-cloudformation-solution)
+  - [The Launch Order & Main Resources Created](#the-launch-order--main-resources-created)
+    - [vpc.yml](#vpcyml)
+    - [autoscaling-group.yml](#autoscaling-groupyml)
+    - [pipeline-ec2.yml](#pipeline-ec2yml)
+    - [loadBalancer.yml](#loadbalanceryml)
+    - [pipeline-s3-cloudfront.yml](#pipeline-s3-cloudfrontyml)
+  - [Solution Highlights](#solution-highlights)
+  - [References](#references)
+
+<!-- /TOC -->
+
+### vpc.yml
 
 - A VPC with 2 public-private subnet pair in 2 AZ
 - Internet Gateway and NAT Gateway
 - Route Tables
 - A Security Group
 
-## 2. autoscaling-group.yml
+### autoscaling-group.yml
 
 - An Auto Scaling Group
 - A Target Group for the Load Balancer which will be created in the loadBalancer template
 
-## 3. pipeline-ec2.yml
+### pipeline-ec2.yml
 
 - A CodePipeline which connects to GitHub
 - An S3 bucket to store the built artifact
 - A CodeDeploy Application and Deployment Group
 
-## 4. loadBalancer.yml
+### loadBalancer.yml
 
 - A Load Balancer
 - A Listener Rule pointing to the Target Group created in the previous template
 - A Security Group
 
-## 5. pipeline-s3-cloudfront.yml
+### pipeline-s3-cloudfront.yml
 
 - A CodePipeline which connects to GitHub
 - A CodeBuild Project with a buildspec which does cache invalidation for CloudFront
@@ -44,9 +58,10 @@
 
 ## References
 
-- Stelligent https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml
-- How to continuously deploy a static website in style using GitHub and AWS 
-  https://medium.com/@kyle.galbraith/how-to-continuously-deploy-a-static-website-in-style-using-github-and-aws-3df7ecb58d9c
-- How to Easily Boost the Delivery of Static Websites in AWS
-  https://blog.kylegalbraith.com/2018/09/16/how-to-easily-boost-the-delivery-of-static-websites-in-aws/
+- [Stelligent] (https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml)
+
+- [How to continuously deploy a static website in style using GitHub and AWS](https://medium.com/@kyle.galbraith/how-to-continuously-deploy-a-static-website-in-style-using-github-and-aws-3df7ecb58d9c)
+
+- [How to Easily Boost the Delivery of Static Websites in AWS](https://blog.kylegalbraith.com/2018/09/16/how-to-easily-boost-the-delivery-of-static-websites-in-aws/)
+
 - AWS official docs
