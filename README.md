@@ -58,7 +58,7 @@
 
 ## References
 
-- [Stelligent] (https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml)
+- [Stelligent](https://github.com/stelligent/cloudformation_templates/blob/master/labs/spa/pipeline.yml)
 
 - [How to continuously deploy a static website in style using GitHub and AWS](https://medium.com/@kyle.galbraith/how-to-continuously-deploy-a-static-website-in-style-using-github-and-aws-3df7ecb58d9c)
 
